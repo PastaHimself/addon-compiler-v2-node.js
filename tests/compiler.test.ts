@@ -27,6 +27,11 @@ async function writeText(filePath: string, value: string) {
   await fs.writeFile(filePath, value);
 }
 
+async function writeJsonWithBom(filePath: string, value: unknown) {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, `\uFEFF${JSON.stringify(value, null, 2)}`);
+}
+
 async function zipDirectory(sourceDir: string, destinationFile: string) {
   const zip = new JSZip();
 
@@ -233,6 +238,80 @@ describe("compiler port", () => {
       expect(catalog.addOns).toHaveLength(1);
       expect(catalog.addOns[0].resourcePack.cleanName).toBe("Chat RP");
       expect(catalog.addOns[0].behaviorPack.cleanName).toBe("Chat BP");
+    } finally {
+      await fs.rm(rawDir, { recursive: true, force: true });
+      await fs.rm(sourceDir, { recursive: true, force: true });
+      await fs.rm(extractedDir, { recursive: true, force: true });
+    }
+  });
+
+  test("buildWorkspaceCatalog detects archive folders with BOM-prefixed manifests", async () => {
+    const rawDir = await makeTempDir();
+    const sourceDir = await makeTempDir();
+    const extractedDir = await makeTempDir();
+    try {
+      const rpUuid = "81111111-1111-1111-1111-111111111111";
+      const bpUuid = "82222222-2222-2222-2222-222222222222";
+      const rpDir = path.join(sourceDir, "RP");
+      const bpDir = path.join(sourceDir, "BP");
+
+      await writeJsonWithBom(path.join(rpDir, "manifest.json"), {
+        format_version: 2,
+        header: {
+          name: "EliteFaction RP",
+          uuid: rpUuid,
+          version: [1, 1, 0],
+        },
+        modules: [
+          {
+            type: "resources",
+            uuid: "81111111-1111-1111-1111-111111111112",
+            version: [1, 1, 0],
+          },
+        ],
+      });
+      await fs.mkdir(path.join(rpDir, "textures"), { recursive: true });
+
+      await writeJsonWithBom(path.join(bpDir, "manifest.json"), {
+        format_version: 2,
+        header: {
+          name: "EliteFaction BP",
+          uuid: bpUuid,
+          version: [1, 1, 0],
+        },
+        modules: [
+          {
+            type: "data",
+            uuid: "82222222-2222-2222-2222-222222222223",
+            version: [1, 1, 0],
+          },
+          {
+            type: "script",
+            uuid: "82222222-2222-2222-2222-222222222224",
+            version: [1, 1, 0],
+          },
+        ],
+        dependencies: [
+          {
+            uuid: rpUuid,
+          },
+          {
+            module_name: "@minecraft/server",
+            version: "2.6.0-beta",
+          },
+        ],
+      });
+      await fs.mkdir(path.join(bpDir, "scripts"), { recursive: true });
+
+      const outerArchive = path.join(rawDir, "EliteFaction_0.1_alpha.mcaddon");
+      await zipDirectory(sourceDir, outerArchive);
+
+      const extractedRoots = await extractUploadedArchives(rawDir, extractedDir);
+      const catalog = await buildWorkspaceCatalog("bom-archive-session", rawDir, extractedRoots);
+
+      expect(catalog.addOns).toHaveLength(1);
+      expect(catalog.addOns[0].resourcePack.cleanName).toBe("EliteFaction RP");
+      expect(catalog.addOns[0].behaviorPack.cleanName).toBe("EliteFaction BP");
     } finally {
       await fs.rm(rawDir, { recursive: true, force: true });
       await fs.rm(sourceDir, { recursive: true, force: true });

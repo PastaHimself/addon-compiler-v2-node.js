@@ -25,7 +25,7 @@ import {
 async function readJsonFile<T>(filePath: string): Promise<T | null> {
   try {
     const content = await fs.readFile(filePath, "utf8");
-    return JSON.parse(content) as T;
+    return JSON.parse(content.replace(/^\uFEFF/, "")) as T;
   } catch {
     return null;
   }
