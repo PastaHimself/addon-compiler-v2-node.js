@@ -98,6 +98,39 @@ async function collectFiles(currentDir: string): Promise<string[]> {
   return files;
 }
 
+async function extractNestedArchives(
+  rootDir: string,
+  extractedDir: string,
+  archiveNamePrefix: string,
+): Promise<Array<{ absolutePath: string; archiveName: string }>> {
+  const files = await collectFiles(rootDir);
+  const nestedRoots: Array<{ absolutePath: string; archiveName: string }> = [];
+  let nestedIndex = 0;
+
+  for (const filePath of files) {
+    const extension = path.extname(filePath).toLowerCase();
+    if (!ARCHIVE_EXTENSIONS.has(extension)) {
+      continue;
+    }
+
+    nestedIndex += 1;
+    const archiveName = path.basename(filePath);
+    const archiveLabel = `${archiveNamePrefix}/${archiveName}`;
+    const rootName = `${archiveNamePrefix.replace(/[\\/]/g, "-")}-${nestedIndex}-${sanitizeFileName(archiveName).replace(/\s+/g, "-")}`;
+    const archiveRoot = path.join(extractedDir, rootName);
+    await fs.mkdir(archiveRoot, { recursive: true });
+    await extractArchive(filePath, archiveRoot);
+    nestedRoots.push({
+      absolutePath: archiveRoot,
+      archiveName: archiveLabel,
+    });
+
+    nestedRoots.push(...(await extractNestedArchives(archiveRoot, extractedDir, archiveLabel)));
+  }
+
+  return nestedRoots;
+}
+
 export async function extractUploadedArchives(
   rawDir: string,
   extractedDir: string,
@@ -122,6 +155,7 @@ export async function extractUploadedArchives(
       absolutePath: archiveRoot,
       archiveName,
     });
+    roots.push(...(await extractNestedArchives(archiveRoot, extractedDir, archiveName)));
   }
 
   return roots;

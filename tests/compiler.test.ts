@@ -7,6 +7,7 @@ import JSZip from "jszip";
 import { buildArtifactForTarget } from "@/lib/compiler/archive";
 import { buildWorkspaceCatalog } from "@/lib/compiler/catalog";
 import { cleanName } from "@/lib/compiler/utils";
+import { extractUploadedArchives } from "@/lib/server/workspace";
 import {
   normalizeAddonAndBuildArtifact,
   updateScriptVersionAndBuildArtifact,
@@ -24,6 +25,28 @@ async function writeJson(filePath: string, value: unknown) {
 async function writeText(filePath: string, value: string) {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.writeFile(filePath, value);
+}
+
+async function zipDirectory(sourceDir: string, destinationFile: string) {
+  const zip = new JSZip();
+
+  async function addDirectory(currentDir: string, relativeDir = ""): Promise<void> {
+    const entries = await fs.readdir(currentDir, { withFileTypes: true });
+    for (const entry of entries) {
+      const entryPath = path.join(currentDir, entry.name);
+      const relativePath = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
+
+      if (entry.isDirectory()) {
+        await addDirectory(entryPath, relativePath);
+        continue;
+      }
+
+      zip.file(relativePath.replaceAll("\\", "/"), await fs.readFile(entryPath));
+    }
+  }
+
+  await addDirectory(sourceDir);
+  await fs.writeFile(destinationFile, await zip.generateAsync({ type: "nodebuffer" }));
 }
 
 async function createResourcePack(rootDir: string, folderName: string, uuid: string, displayName: string) {
@@ -174,6 +197,45 @@ describe("compiler port", () => {
       expect(catalog.resourcePacks[0].cleanName).toBe("Root Archive Pack");
     } finally {
       await fs.rm(rawDir, { recursive: true, force: true });
+      await fs.rm(extractedDir, { recursive: true, force: true });
+    }
+  });
+
+  test("extractUploadedArchives unwraps nested mcpack files inside mcaddon uploads", async () => {
+    const rawDir = await makeTempDir();
+    const sourceDir = await makeTempDir();
+    const extractedDir = await makeTempDir();
+    try {
+      const rpUuid = "71111111-1111-1111-1111-111111111111";
+      const bpUuid = "72222222-2222-2222-2222-222222222222";
+      const rpDir = path.join(sourceDir, "Chat RP");
+      const bpDir = path.join(sourceDir, "Chat BP");
+
+      await createResourcePack(sourceDir, "Chat RP", rpUuid, "Chat RP");
+      await createBehaviorPack(sourceDir, "Chat BP", bpUuid, "Chat BP", rpUuid);
+
+      const rpArchive = path.join(sourceDir, "chat addon RP.mcpack");
+      const bpArchive = path.join(sourceDir, "chatAddon.mcpack");
+      await zipDirectory(rpDir, rpArchive);
+      await zipDirectory(bpDir, bpArchive);
+
+      const outerArchive = new JSZip();
+      outerArchive.file(path.basename(rpArchive), await fs.readFile(rpArchive));
+      outerArchive.file(path.basename(bpArchive), await fs.readFile(bpArchive));
+      await fs.writeFile(
+        path.join(rawDir, "chat addon Revamp.mcaddon"),
+        await outerArchive.generateAsync({ type: "nodebuffer" }),
+      );
+
+      const extractedRoots = await extractUploadedArchives(rawDir, extractedDir);
+      const catalog = await buildWorkspaceCatalog("nested-archive-session", rawDir, extractedRoots);
+
+      expect(catalog.addOns).toHaveLength(1);
+      expect(catalog.addOns[0].resourcePack.cleanName).toBe("Chat RP");
+      expect(catalog.addOns[0].behaviorPack.cleanName).toBe("Chat BP");
+    } finally {
+      await fs.rm(rawDir, { recursive: true, force: true });
+      await fs.rm(sourceDir, { recursive: true, force: true });
       await fs.rm(extractedDir, { recursive: true, force: true });
     }
   });
