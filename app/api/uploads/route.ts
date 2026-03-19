@@ -9,6 +9,20 @@ function isAllowedPathname(pathname: string): boolean {
   return /^sessions\/[a-zA-Z0-9-]+\/raw\/.+/.test(pathname);
 }
 
+function resolveCallbackUrl(request: Request): string | undefined {
+  if (process.env.VERCEL_BLOB_CALLBACK_URL) {
+    return process.env.VERCEL_BLOB_CALLBACK_URL;
+  }
+
+  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+  const protocol = request.headers.get("x-forwarded-proto") ?? "https";
+  if (!host) {
+    return undefined;
+  }
+
+  return `${protocol}://${host}/api/uploads`;
+}
+
 export async function POST(request: Request) {
   try {
     if (!process.env.BLOB_READ_WRITE_TOKEN) {
@@ -28,18 +42,12 @@ export async function POST(request: Request) {
         }
 
         return {
-          allowedContentTypes: [
-            "application/zip",
-            "application/octet-stream",
-            "image/png",
-            "image/jpeg",
-          ],
           addRandomSuffix: false,
           tokenPayload: JSON.stringify({
             pathname,
           }),
-          ...(process.env.VERCEL_BLOB_CALLBACK_URL
-            ? { callbackUrl: process.env.VERCEL_BLOB_CALLBACK_URL }
+          ...(resolveCallbackUrl(request)
+            ? { callbackUrl: resolveCallbackUrl(request) }
             : {}),
         };
       },
