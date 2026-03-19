@@ -424,9 +424,19 @@ input {
   overflow: auto;
 }
 
+.console-list {
+  max-height: 280px;
+}
+
 .log-line {
   padding: 12px 14px;
   color: var(--muted);
+}
+
+.console-line {
+  font-family: "Courier New", monospace;
+  font-size: 0.9rem;
+  white-space: pre-wrap;
 }
 
 .file-list {

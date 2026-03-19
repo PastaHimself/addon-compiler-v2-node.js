@@ -41,6 +41,22 @@ async function addDirectoryToZip(zip: JSZip, sourceDir: string, zipPrefix = "") 
   }
 }
 
+function resolvePackArchiveRootName(
+  entry: ResourcePackEntry | BehaviorPackEntry | WorldEntry,
+): string {
+  const currentDirName = path.basename(entry.absolutePath);
+  if (entry.sourceType !== "archive" || !entry.sourceArchiveName) {
+    return currentDirName;
+  }
+
+  const archiveLogicalPath = `archive/${toPosix(entry.sourceArchiveName)}`;
+  if (entry.logicalPath !== archiveLogicalPath) {
+    return currentDirName;
+  }
+
+  return sanitizeFileName(path.basename(entry.sourceArchiveName, path.extname(entry.sourceArchiveName)));
+}
+
 function buildOutputFilename(
   type: "resourcePack" | "behaviorPack" | "addOnPack" | "world",
   cleanName: string,
@@ -113,8 +129,16 @@ async function buildAddonArtifact(
   format: "mcaddon" | "zip",
 ): Promise<ArtifactBuildResult> {
   const zip = new JSZip();
-  await addDirectoryToZip(zip, addOn.resourcePack.absolutePath, path.basename(addOn.resourcePack.absolutePath));
-  await addDirectoryToZip(zip, addOn.behaviorPack.absolutePath, path.basename(addOn.behaviorPack.absolutePath));
+  await addDirectoryToZip(
+    zip,
+    addOn.resourcePack.absolutePath,
+    resolvePackArchiveRootName(addOn.resourcePack),
+  );
+  await addDirectoryToZip(
+    zip,
+    addOn.behaviorPack.absolutePath,
+    resolvePackArchiveRootName(addOn.behaviorPack),
+  );
   const buffer = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
 
   return {
@@ -136,7 +160,7 @@ async function buildWorldArtifact(
     await addDirectoryToZip(
       zip,
       resourcePack.absolutePath,
-      path.join("resource_packs", path.basename(resourcePack.absolutePath)),
+      path.join("resource_packs", resolvePackArchiveRootName(resourcePack)),
     );
   }
 
@@ -144,7 +168,7 @@ async function buildWorldArtifact(
     await addDirectoryToZip(
       zip,
       behaviorPack.absolutePath,
-      path.join("behavior_packs", path.basename(behaviorPack.absolutePath)),
+      path.join("behavior_packs", resolvePackArchiveRootName(behaviorPack)),
     );
   }
 

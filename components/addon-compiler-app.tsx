@@ -67,6 +67,14 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function formatConsoleTimestamp() {
+  return new Date().toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
 function messageFromUnknown(error: unknown): string {
   return error instanceof Error ? error.message : "Something went wrong.";
 }
@@ -157,6 +165,7 @@ export function AddonCompilerApp() {
   const [busy, setBusy] = useState(false);
   const [downloads, setDownloads] = useState<DownloadItem[]>([]);
   const [normalizeLog, setNormalizeLog] = useState<string[]>([]);
+  const [activityLog, setActivityLog] = useState<string[]>([]);
 
   useEffect(() => {
     const stored = window.localStorage.getItem(PREFERENCES_KEY);
@@ -207,6 +216,11 @@ export function AddonCompilerApp() {
     [catalog],
   );
 
+  function appendActivity(message: string) {
+    const line = `[${formatConsoleTimestamp()}] ${message}`;
+    setActivityLog((current) => [line, ...current].slice(0, 120));
+  }
+
   function mergePendingFiles(files: FileList | null) {
     if (!files?.length) {
       return;
@@ -238,18 +252,26 @@ export function AddonCompilerApp() {
         left.uploadPath.localeCompare(right.uploadPath),
       );
     });
+
+    appendActivity(`Staged ${files.length} file(s) for upload.`);
   }
 
   async function refreshCatalog(activeSessionId = sessionId) {
     try {
+      appendActivity(`Refreshing catalog for session ${activeSessionId}.`);
       const nextCatalog = await postJson<WorkspaceCatalog>("/api/catalog", {
         sessionId: activeSessionId,
       });
       setCatalog(nextCatalog);
       setStatus(`Catalog refreshed for session ${activeSessionId}.`);
+      appendActivity(
+        `Catalog ready: ${nextCatalog.resourcePacks.length} RP, ${nextCatalog.addOns.length} add-ons, ${nextCatalog.behaviorPacks.length} BP, ${nextCatalog.worlds.length} worlds.`,
+      );
       return nextCatalog;
     } catch (error) {
-      setStatus(messageFromUnknown(error));
+      const message = messageFromUnknown(error);
+      setStatus(message);
+      appendActivity(`Catalog refresh failed: ${message}`);
       throw error;
     }
   }
@@ -267,11 +289,13 @@ export function AddonCompilerApp() {
           oversizedFile.file.size,
         )}).`,
       );
+      appendActivity(`Upload blocked: ${oversizedFile.uploadPath} exceeds the server file limit.`);
       return;
     }
 
     setBusy(true);
     setStatus(`Uploading ${pendingUploads.length} file(s) to session ${sessionId}...`);
+    appendActivity(`Uploading ${pendingUploads.length} staged file(s) to session ${sessionId}.`);
 
     try {
       let completed = 0;
@@ -279,10 +303,13 @@ export function AddonCompilerApp() {
         await uploadFileToServer(`sessions/${sessionId}/raw/${pending.uploadPath}`, pending.file);
         completed += 1;
         setStatus(`Uploaded ${completed}/${pendingUploads.length} file(s)...`);
+        appendActivity(`Uploaded ${pending.uploadPath} (${completed}/${pendingUploads.length}).`);
       }
       await refreshCatalog();
     } catch (error) {
-      setStatus(messageFromUnknown(error));
+      const message = messageFromUnknown(error);
+      setStatus(message);
+      appendActivity(`Upload failed: ${message}`);
     } finally {
       setBusy(false);
     }
@@ -298,12 +325,15 @@ export function AddonCompilerApp() {
     setCatalog(null);
     setDownloads([]);
     setNormalizeLog([]);
+    setActivityLog([]);
     setStatus(`Started a new local session ${nextSessionId}. Upload files to continue.`);
+    appendActivity(`Started new session ${nextSessionId}.`);
   }
 
   async function runCompile(targetType: CompileRequest["targetType"], targetId: string) {
     setBusy(true);
     setStatus(`Compiling ${targetType}...`);
+    appendActivity(`Compiling ${targetType} ${targetId} as ${format}.`);
     try {
       const result = await postJson<Omit<DownloadItem, "id"> & { warnings?: PackWarning[] }>(
         "/api/compile",
@@ -316,8 +346,11 @@ export function AddonCompilerApp() {
       );
       setDownloads((current) => [{ ...result, id: crypto.randomUUID() }, ...current]);
       setStatus(result.summary);
+      appendActivity(`Compile complete: ${result.filename}.`);
     } catch (error) {
-      setStatus(messageFromUnknown(error));
+      const message = messageFromUnknown(error);
+      setStatus(message);
+      appendActivity(`Compile failed: ${message}`);
     } finally {
       setBusy(false);
     }
@@ -326,6 +359,7 @@ export function AddonCompilerApp() {
   async function runScriptUpdate(targetId: string, fromVersion: string) {
     setBusy(true);
     setStatus("Updating Script API version...");
+    appendActivity(`Updating Script API for ${targetId} from ${fromVersion || "current"} to beta.`);
     try {
       const result = await postJson<Omit<DownloadItem, "id">>(
         "/api/transform/script-version",
@@ -338,8 +372,11 @@ export function AddonCompilerApp() {
       );
       setDownloads((current) => [{ ...result, id: crypto.randomUUID() }, ...current]);
       setStatus(result.summary);
+      appendActivity(`Script API update complete: ${result.filename}.`);
     } catch (error) {
-      setStatus(messageFromUnknown(error));
+      const message = messageFromUnknown(error);
+      setStatus(message);
+      appendActivity(`Script API update failed: ${message}`);
     } finally {
       setBusy(false);
     }
@@ -348,6 +385,7 @@ export function AddonCompilerApp() {
   async function runNormalize(addonId: string) {
     setBusy(true);
     setStatus("Normalizing add-on...");
+    appendActivity(`Normalizing add-on ${addonId}.`);
     try {
       const result = await postJson<Omit<DownloadItem, "id"> & { logLines?: string[] }>(
         "/api/transform/normalize",
@@ -359,8 +397,11 @@ export function AddonCompilerApp() {
       setDownloads((current) => [{ ...result, id: crypto.randomUUID() }, ...current]);
       setNormalizeLog(result.logLines ?? []);
       setStatus(result.summary);
+      appendActivity(`Normalize complete: ${result.filename}.`);
     } catch (error) {
-      setStatus(messageFromUnknown(error));
+      const message = messageFromUnknown(error);
+      setStatus(message);
+      appendActivity(`Normalize failed: ${message}`);
     } finally {
       setBusy(false);
     }
@@ -654,7 +695,13 @@ export function AddonCompilerApp() {
             className="hidden-input"
             type="file"
             multiple
-            onChange={(event) => mergePendingFiles(event.currentTarget.files)}
+            onClick={(event) => {
+              event.currentTarget.value = "";
+            }}
+            onChange={(event) => {
+              mergePendingFiles(event.currentTarget.files);
+              event.currentTarget.value = "";
+            }}
           />
           <input
             ref={fileInputRef}
@@ -662,7 +709,13 @@ export function AddonCompilerApp() {
             type="file"
             multiple
             accept=".zip,.mcpack,.mcaddon,.mcworld"
-            onChange={(event) => mergePendingFiles(event.currentTarget.files)}
+            onClick={(event) => {
+              event.currentTarget.value = "";
+            }}
+            onChange={(event) => {
+              mergePendingFiles(event.currentTarget.files);
+              event.currentTarget.value = "";
+            }}
           />
 
           {pendingUploads.length ? (
@@ -737,6 +790,22 @@ export function AddonCompilerApp() {
           ) : (
             <div className="muted-empty">
               Normalize an add-on to see file rename activity here.
+            </div>
+          )}
+        </Section>
+
+        <Section label="Console" title="Activity">
+          {activityLog.length ? (
+            <div className="log-list console-list">
+              {activityLog.map((line, index) => (
+                <div className="log-line console-line" key={`${line}-${index}`}>
+                  {line}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="muted-empty">
+              Upload, refresh, compile, and transform activity will appear here.
             </div>
           )}
         </Section>

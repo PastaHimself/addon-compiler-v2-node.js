@@ -209,6 +209,79 @@ describe("compiler port", () => {
     }
   });
 
+  test("buildArtifactForTarget keeps stable pack folder names for archive-root add-ons", async () => {
+    const rawDir = await makeTempDir();
+    const extractedRpDir = await makeTempDir();
+    const extractedBpDir = await makeTempDir();
+    try {
+      const rpUuid = "61111111-1111-1111-1111-111111111111";
+      const bpUuid = "62222222-2222-2222-2222-222222222222";
+
+      await writeJson(path.join(extractedRpDir, "manifest.json"), {
+        format_version: 2,
+        header: {
+          name: "pack.name",
+          uuid: rpUuid,
+          version: [1, 0, 0],
+        },
+        modules: [
+          {
+            type: "resources",
+            uuid: "61111111-1111-1111-1111-111111111112",
+            version: [1, 0, 0],
+          },
+        ],
+      });
+      await writeText(path.join(extractedRpDir, "texts", "en_US.lang"), "pack.name=Archive Root RP\n");
+
+      await writeJson(path.join(extractedBpDir, "manifest.json"), {
+        format_version: 2,
+        header: {
+          name: "pack.name",
+          uuid: bpUuid,
+          version: [1, 0, 0],
+        },
+        modules: [
+          {
+            type: "data",
+            uuid: "62222222-2222-2222-2222-222222222223",
+            version: [1, 0, 0],
+          },
+        ],
+        dependencies: [
+          {
+            uuid: rpUuid,
+          },
+          {
+            module_name: "@minecraft/server",
+            version: "1.8.0-beta",
+          },
+        ],
+      });
+      await writeText(path.join(extractedBpDir, "texts", "en_US.lang"), "pack.name=Archive Root BP\n");
+
+      const catalog = await buildWorkspaceCatalog("archive-addon-session", rawDir, [
+        { absolutePath: extractedRpDir, archiveName: "Archive Root RP.mcpack" },
+        { absolutePath: extractedBpDir, archiveName: "Archive Root BP.mcpack" },
+      ]);
+
+      expect(catalog.addOns).toHaveLength(1);
+
+      const artifact = await buildArtifactForTarget(catalog, catalog.addOns[0], "zip");
+      const archive = await JSZip.loadAsync(artifact.buffer);
+      const archiveEntries = Object.keys(archive.files);
+
+      expect(archiveEntries.some((name) => name.startsWith("Archive Root RP/manifest.json"))).toBe(true);
+      expect(archiveEntries.some((name) => name.startsWith("Archive Root BP/manifest.json"))).toBe(true);
+      expect(archiveEntries.some((name) => /^1-|^2-/.test(name))).toBe(false);
+      expect(artifact.filename.endsWith(".zip")).toBe(true);
+    } finally {
+      await fs.rm(rawDir, { recursive: true, force: true });
+      await fs.rm(extractedRpDir, { recursive: true, force: true });
+      await fs.rm(extractedBpDir, { recursive: true, force: true });
+    }
+  });
+
   test("updateScriptVersionAndBuildArtifact rewrites the Script API version", async () => {
     const rawDir = await makeTempDir();
     try {
