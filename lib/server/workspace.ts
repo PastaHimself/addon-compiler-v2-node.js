@@ -57,6 +57,11 @@ export async function hydrateSessionUploads(sessionId: string, rawDir: string): 
     }
     relativePaths.push(relativePath);
     const destinationPath = ensureInside(rawDir, path.join(rawDir, relativePath));
+    await fs.mkdir(path.dirname(destinationPath), { recursive: true });
+    if (upload.localFilePath) {
+      await fs.copyFile(upload.localFilePath, destinationPath);
+      continue;
+    }
     await downloadBlobToFile(upload.url, destinationPath);
   }
 

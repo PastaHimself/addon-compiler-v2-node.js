@@ -113,6 +113,7 @@ export interface TransformResult {
 export interface UploadedBlobInfo {
   pathname: string;
   url: string;
+  localFilePath?: string;
 }
 
 export interface DiscoveredDirectory {

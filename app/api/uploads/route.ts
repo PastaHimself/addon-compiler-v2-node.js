@@ -1,5 +1,4 @@
-import { put } from "@vercel/blob";
-
+import { storeUpload } from "@/lib/server/blob-storage";
 import { errorJson, okJson } from "@/lib/server/http";
 
 export const runtime = "nodejs";
@@ -11,13 +10,6 @@ function isAllowedPathname(pathname: string): boolean {
 
 export async function POST(request: Request) {
   try {
-    if (!process.env.BLOB_READ_WRITE_TOKEN) {
-      return errorJson(
-        "Blob uploads are not configured. Set BLOB_READ_WRITE_TOKEN in Vercel project settings.",
-        500,
-      );
-    }
-
     const { searchParams } = new URL(request.url);
     const pathname = searchParams.get("pathname");
     if (!pathname || !isAllowedPathname(pathname)) {
@@ -28,11 +20,7 @@ export async function POST(request: Request) {
       return errorJson("Missing upload body.");
     }
 
-    const blob = await put(pathname, request.body, {
-      access: "public",
-      addRandomSuffix: false,
-      contentType: request.headers.get("content-type") ?? undefined,
-    });
+    const blob = await storeUpload(pathname, request.body, request.headers.get("content-type") ?? undefined);
 
     return okJson(blob);
   } catch (error) {
