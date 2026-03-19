@@ -1,4 +1,4 @@
-import { handleUpload } from "@vercel/blob/client";
+import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 
 import { errorJson, okJson } from "@/lib/server/http";
 
@@ -11,7 +11,14 @@ function isAllowedPathname(pathname: string): boolean {
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    if (!process.env.BLOB_READ_WRITE_TOKEN) {
+      return errorJson(
+        "Blob uploads are not configured. Set BLOB_READ_WRITE_TOKEN in Vercel project settings.",
+        500,
+      );
+    }
+
+    const body = (await request.json()) as HandleUploadBody;
     const response = await handleUpload({
       body,
       request,
@@ -21,7 +28,19 @@ export async function POST(request: Request) {
         }
 
         return {
+          allowedContentTypes: [
+            "application/zip",
+            "application/octet-stream",
+            "image/png",
+            "image/jpeg",
+          ],
           addRandomSuffix: false,
+          tokenPayload: JSON.stringify({
+            pathname,
+          }),
+          ...(process.env.VERCEL_BLOB_CALLBACK_URL
+            ? { callbackUrl: process.env.VERCEL_BLOB_CALLBACK_URL }
+            : {}),
         };
       },
       onUploadCompleted: async () => {
@@ -32,6 +51,6 @@ export async function POST(request: Request) {
     return okJson(response);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to create upload token.";
-    return errorJson(message, 500);
+    return errorJson(message, 400);
   }
 }

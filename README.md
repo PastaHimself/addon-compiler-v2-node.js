@@ -39,6 +39,16 @@ BLOB_READ_WRITE_TOKEN=...
 
 Use Node.js 20 or newer for local development.
 
+If Vercel Blob client uploads fail with `Failed to retrieve the client token`:
+
+- Verify `BLOB_READ_WRITE_TOKEN` exists in the project environment.
+- In Vercel, make sure System Environment Variables are enabled so Blob can infer its callback URL.
+- For local tunneling flows, set:
+
+```bash
+VERCEL_BLOB_CALLBACK_URL=https://your-public-tunnel-url.example
+```
+
 ## Development
 
 ```bash
