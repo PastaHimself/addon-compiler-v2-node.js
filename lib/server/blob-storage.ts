@@ -55,13 +55,24 @@ export function isBlobConfigured() {
   return hasBlobToken();
 }
 
+async function toBuffer(content: BodyInit | ReadableStream<Uint8Array> | Buffer): Promise<Buffer> {
+  if (content instanceof Buffer) {
+    return content;
+  }
+
+  const response = new Response(content);
+  return Buffer.from(await response.arrayBuffer());
+}
+
 export async function storeUpload(
   pathnameValue: string,
   content: BodyInit | ReadableStream<Uint8Array> | Buffer,
   contentType?: string,
 ) {
+  const buffer = await toBuffer(content);
+
   if (hasBlobToken()) {
-    return put(pathnameValue, content, {
+    return put(pathnameValue, buffer, {
       access: "public",
       addRandomSuffix: false,
       contentType,
@@ -69,17 +80,6 @@ export async function storeUpload(
   }
 
   const destinationPath = getLocalStoragePath(pathnameValue);
-  let buffer: Buffer;
-
-  if (content instanceof ReadableStream) {
-    const response = new Response(content);
-    buffer = Buffer.from(await response.arrayBuffer());
-  } else if (content instanceof Buffer) {
-    buffer = content;
-  } else {
-    const response = new Response(content);
-    buffer = Buffer.from(await response.arrayBuffer());
-  }
 
   await fs.mkdir(path.dirname(destinationPath), { recursive: true });
   await fs.writeFile(destinationPath, buffer);
