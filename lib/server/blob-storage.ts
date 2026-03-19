@@ -56,7 +56,7 @@ export function isBlobConfigured() {
 }
 
 async function toBuffer(content: ReadableStream<Uint8Array> | Buffer): Promise<Buffer> {
-  if (content instanceof Buffer) {
+  if (Buffer.isBuffer(content)) {
     return content;
   }
 
