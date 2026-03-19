@@ -19,7 +19,7 @@ export async function GET(request: Request) {
     }
 
     const content = await readLocalStoredFile(pathname);
-    return new Response(content, {
+    return new Response(new Uint8Array(content), {
       headers: {
         "Content-Type": detectMimeType(pathname),
       },
