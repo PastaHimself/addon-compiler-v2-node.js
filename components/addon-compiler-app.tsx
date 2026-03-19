@@ -27,6 +27,12 @@ interface DownloadItem {
   summary: string;
 }
 
+interface CatalogTarget {
+  id: string;
+  kind: CompileRequest["targetType"];
+  cleanName: string;
+}
+
 const PREFERENCES_KEY = "addon-compiler-web-preferences";
 const MAX_SERVER_UPLOAD_BYTES = 4 * 1024 * 1024;
 
@@ -148,6 +154,15 @@ function Section({
   );
 }
 
+function getCatalogTargets(catalog: WorkspaceCatalog): CatalogTarget[] {
+  return [
+    ...catalog.resourcePacks.map(({ id, kind, cleanName }) => ({ id, kind, cleanName })),
+    ...catalog.addOns.map(({ id, kind, cleanName }) => ({ id, kind, cleanName })),
+    ...catalog.behaviorPacks.map(({ id, kind, cleanName }) => ({ id, kind, cleanName })),
+    ...catalog.worlds.map(({ id, kind, cleanName }) => ({ id, kind, cleanName })),
+  ];
+}
+
 export function AddonCompilerApp() {
   const folderInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -156,11 +171,12 @@ export function AddonCompilerApp() {
   const [theme, setTheme] = useState<ThemeOption>("overworld");
   const [format, setFormat] = useState<"mcaddon" | "zip">("mcaddon");
   const [pendingUploads, setPendingUploads] = useState<PendingUpload[]>([]);
+  const pendingUploadsRef = useRef<PendingUpload[]>([]);
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
   const previewUrlsRef = useRef<Record<string, string>>({});
   const [catalog, setCatalog] = useState<WorkspaceCatalog | null>(null);
   const [status, setStatus] = useState(
-    "Select extracted folders or packaged files, then upload them into a session.",
+    "Select extracted folders or packaged files. Upload starts immediately, then the compiler prepares available targets.",
   );
   const [busy, setBusy] = useState(false);
   const [downloads, setDownloads] = useState<DownloadItem[]>([]);
@@ -201,6 +217,10 @@ export function AddonCompilerApp() {
   }, [previewUrls]);
 
   useEffect(() => {
+    pendingUploadsRef.current = pendingUploads;
+  }, [pendingUploads]);
+
+  useEffect(() => {
     return () => {
       Object.values(previewUrlsRef.current).forEach((url) => URL.revokeObjectURL(url));
     };
@@ -221,39 +241,41 @@ export function AddonCompilerApp() {
     setActivityLog((current) => [line, ...current].slice(0, 120));
   }
 
-  function mergePendingFiles(files: FileList | null) {
+  function stagePendingFiles(files: FileList | null): PendingUpload[] {
     if (!files?.length) {
-      return;
+      return pendingUploadsRef.current;
     }
 
-    setPendingUploads((current) => {
-      const next = new Map(current.map((item) => [item.uploadPath, item]));
-      const previewNext = { ...previewUrlsRef.current };
+    const next = new Map(
+      pendingUploadsRef.current.map((item) => [item.uploadPath, item] as const),
+    );
+    const previewNext = { ...previewUrlsRef.current };
 
-      for (const file of Array.from(files)) {
-        const uploadPath = normalizeClientRelativePath(file);
-        next.set(uploadPath, { file, uploadPath });
+    for (const file of Array.from(files)) {
+      const uploadPath = normalizeClientRelativePath(file);
+      next.set(uploadPath, { file, uploadPath });
 
-        const lowerName = file.name.toLowerCase();
-        if (
-          lowerName === "pack_icon.png" ||
-          lowerName === "world_icon.jpeg" ||
-          lowerName === "world_icon.jpg"
-        ) {
-          if (previewNext[uploadPath]) {
-            URL.revokeObjectURL(previewNext[uploadPath]);
-          }
-          previewNext[uploadPath] = URL.createObjectURL(file);
+      const lowerName = file.name.toLowerCase();
+      if (
+        lowerName === "pack_icon.png" ||
+        lowerName === "world_icon.jpeg" ||
+        lowerName === "world_icon.jpg"
+      ) {
+        if (previewNext[uploadPath]) {
+          URL.revokeObjectURL(previewNext[uploadPath]);
         }
+        previewNext[uploadPath] = URL.createObjectURL(file);
       }
+    }
 
-      setPreviewUrls(previewNext);
-      return Array.from(next.values()).sort((left, right) =>
-        left.uploadPath.localeCompare(right.uploadPath),
-      );
-    });
+    const stagedUploads = Array.from(next.values()).sort((left, right) =>
+      left.uploadPath.localeCompare(right.uploadPath),
+    );
+    setPreviewUrls(previewNext);
+    setPendingUploads(stagedUploads);
+    appendActivity(`Selected ${files.length} file(s). Upload starting automatically.`);
 
-    appendActivity(`Staged ${files.length} file(s) for upload.`);
+    return stagedUploads;
   }
 
   async function refreshCatalog(activeSessionId = sessionId) {
@@ -276,13 +298,13 @@ export function AddonCompilerApp() {
     }
   }
 
-  async function uploadPendingFiles() {
-    if (!pendingUploads.length) {
+  async function uploadPendingFiles(filesToUpload = pendingUploadsRef.current) {
+    if (!filesToUpload.length) {
       setStatus("There are no selected files to upload.");
-      return;
+      return null;
     }
 
-    const oversizedFile = pendingUploads.find((pending) => pending.file.size > MAX_SERVER_UPLOAD_BYTES);
+    const oversizedFile = filesToUpload.find((pending) => pending.file.size > MAX_SERVER_UPLOAD_BYTES);
     if (oversizedFile) {
       setStatus(
         `Server uploads on Vercel are limited per file. ${oversizedFile.uploadPath} is too large (${formatBytes(
@@ -290,29 +312,85 @@ export function AddonCompilerApp() {
         )}).`,
       );
       appendActivity(`Upload blocked: ${oversizedFile.uploadPath} exceeds the server file limit.`);
-      return;
+      return null;
     }
 
     setBusy(true);
-    setStatus(`Uploading ${pendingUploads.length} file(s) to session ${sessionId}...`);
-    appendActivity(`Uploading ${pendingUploads.length} staged file(s) to session ${sessionId}.`);
+    setStatus(`Uploading ${filesToUpload.length} file(s) to session ${sessionId}...`);
+    appendActivity(`Uploading ${filesToUpload.length} staged file(s) to session ${sessionId}.`);
+    const uploadedPaths = new Set<string>();
 
     try {
       let completed = 0;
-      for (const pending of pendingUploads) {
+      for (const pending of filesToUpload) {
         await uploadFileToServer(`sessions/${sessionId}/raw/${pending.uploadPath}`, pending.file);
+        uploadedPaths.add(pending.uploadPath);
         completed += 1;
-        setStatus(`Uploaded ${completed}/${pendingUploads.length} file(s)...`);
-        appendActivity(`Uploaded ${pending.uploadPath} (${completed}/${pendingUploads.length}).`);
+        setStatus(`Uploaded ${completed}/${filesToUpload.length} file(s)...`);
+        appendActivity(`Uploaded ${pending.uploadPath} (${completed}/${filesToUpload.length}).`);
       }
-      await refreshCatalog();
+
+      const nextCatalog = await refreshCatalog();
+      const targetCount = getCatalogTargets(nextCatalog).length;
+      if (targetCount === 0) {
+        setStatus("Upload complete, but no valid packs or worlds were discovered.");
+        appendActivity("Upload complete, but the catalog did not find any compile targets.");
+      } else {
+        setStatus(`Upload complete. ${targetCount} compile target(s) ready.`);
+        appendActivity(`Upload complete. ${targetCount} compile target(s) ready.`);
+      }
+      return nextCatalog;
     } catch (error) {
       const message = messageFromUnknown(error);
       setStatus(message);
       appendActivity(`Upload failed: ${message}`);
+      return null;
     } finally {
+      if (uploadedPaths.size) {
+        setPendingUploads((current) =>
+          current.filter((pending) => !uploadedPaths.has(pending.uploadPath)),
+        );
+      }
       setBusy(false);
     }
+  }
+
+  async function handleSelectedFiles(files: FileList | null) {
+    if (!files?.length) {
+      return;
+    }
+
+    const stagedUploads = stagePendingFiles(files);
+    const nextCatalog = await uploadPendingFiles(stagedUploads);
+    if (!nextCatalog) {
+      return;
+    }
+
+    await autoCompileIfSingleTarget(nextCatalog);
+  }
+
+  async function autoCompileIfSingleTarget(nextCatalog: WorkspaceCatalog) {
+    const targets = getCatalogTargets(nextCatalog);
+    if (targets.length === 0) {
+      return;
+    }
+    if (targets.length > 1) {
+      appendActivity("Waiting for manual compile selection.");
+      return;
+    }
+
+    const [target] = targets;
+    appendActivity(`Auto-compiling ${target.cleanName}.`);
+    await runCompile(target.kind, target.id, target.cleanName);
+  }
+
+  async function retryPendingUploads() {
+    const nextCatalog = await uploadPendingFiles();
+    if (!nextCatalog) {
+      return;
+    }
+
+    await autoCompileIfSingleTarget(nextCatalog);
   }
 
   function resetSession() {
@@ -330,10 +408,14 @@ export function AddonCompilerApp() {
     appendActivity(`Started new session ${nextSessionId}.`);
   }
 
-  async function runCompile(targetType: CompileRequest["targetType"], targetId: string) {
+  async function runCompile(
+    targetType: CompileRequest["targetType"],
+    targetId: string,
+    targetLabel = targetType,
+  ) {
     setBusy(true);
-    setStatus(`Compiling ${targetType}...`);
-    appendActivity(`Compiling ${targetType} ${targetId} as ${format}.`);
+    setStatus(`Compiling ${targetLabel}...`);
+    appendActivity(`Compiling ${targetLabel} (${targetType}) as ${format}.`);
     try {
       const result = await postJson<Omit<DownloadItem, "id"> & { warnings?: PackWarning[] }>(
         "/api/compile",
@@ -433,7 +515,7 @@ export function AddonCompilerApp() {
           <button
             className="action-button primary"
             disabled={busy}
-            onClick={() => void runCompile("resourcePack", entry.id)}
+            onClick={() => void runCompile("resourcePack", entry.id, entry.cleanName)}
           >
             Compile
           </button>
@@ -477,7 +559,7 @@ export function AddonCompilerApp() {
           <button
             className="action-button primary"
             disabled={busy}
-            onClick={() => void runCompile("behaviorPack", entry.id)}
+            onClick={() => void runCompile("behaviorPack", entry.id, entry.cleanName)}
           >
             Compile
           </button>
@@ -536,7 +618,7 @@ export function AddonCompilerApp() {
           <button
             className="action-button primary"
             disabled={busy}
-            onClick={() => void runCompile("addOnPack", entry.id)}
+            onClick={() => void runCompile("addOnPack", entry.id, entry.cleanName)}
           >
             Compile
           </button>
@@ -571,7 +653,7 @@ export function AddonCompilerApp() {
           <button
             className="action-button primary"
             disabled={busy}
-            onClick={() => void runCompile("world", entry.id)}
+            onClick={() => void runCompile("world", entry.id, entry.cleanName)}
           >
             Compile
           </button>
@@ -657,12 +739,13 @@ export function AddonCompilerApp() {
           <div className="section-header">
             <div>
               <div className="small-label">Upload flow</div>
-              <h2 className="section-title">Stage source files</h2>
+              <h2 className="section-title">Upload source files</h2>
             </div>
           </div>
           <p className="subtle-text">
-            Use folder upload for extracted packs and worlds. Use file upload for
-            packaged archives such as <code>.mcpack</code>, <code>.mcaddon</code>,
+            Select folders or packaged files to upload them immediately. If an upload
+            fails, the staged files stay here so you can retry manually. Supported
+            archives include <code>.mcpack</code>, <code>.mcaddon</code>,{" "}
             <code>.mcworld</code>, and <code>.zip</code>.
           </p>
           <div className="action-row">
@@ -683,9 +766,11 @@ export function AddonCompilerApp() {
             <button
               className="action-button primary"
               disabled={busy || pendingUploads.length === 0}
-              onClick={() => void uploadPendingFiles()}
+              onClick={() => {
+                void retryPendingUploads();
+              }}
             >
-              Upload to session
+              Retry staged upload
             </button>
           </div>
 
@@ -699,7 +784,7 @@ export function AddonCompilerApp() {
               event.currentTarget.value = "";
             }}
             onChange={(event) => {
-              mergePendingFiles(event.currentTarget.files);
+              void handleSelectedFiles(event.currentTarget.files);
               event.currentTarget.value = "";
             }}
           />
@@ -713,7 +798,7 @@ export function AddonCompilerApp() {
               event.currentTarget.value = "";
             }}
             onChange={(event) => {
-              mergePendingFiles(event.currentTarget.files);
+              void handleSelectedFiles(event.currentTarget.files);
               event.currentTarget.value = "";
             }}
           />
@@ -728,7 +813,7 @@ export function AddonCompilerApp() {
               ))}
             </div>
           ) : (
-            <div className="muted-empty">No local files staged yet.</div>
+            <div className="muted-empty">No staged files waiting for retry.</div>
           )}
         </section>
 
