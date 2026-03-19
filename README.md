@@ -6,7 +6,7 @@ Node.js + Next.js rewrite of the original Wails/Go Minecraft Bedrock add-on comp
 
 - Next.js App Router
 - TypeScript
-- Vercel Blob for uploads and compiled output artifacts
+- Vercel Blob for server uploads and compiled output artifacts
 - JSZip for archive ingest/export
 - Vitest for core compiler tests
 
@@ -39,16 +39,6 @@ BLOB_READ_WRITE_TOKEN=...
 
 Use Node.js 20 or newer for local development.
 
-If Vercel Blob client uploads fail with `Failed to retrieve the client token`:
-
-- Verify `BLOB_READ_WRITE_TOKEN` exists in the project environment.
-- In Vercel, make sure System Environment Variables are enabled so Blob can infer its callback URL.
-- For local tunneling flows, set:
-
-```bash
-VERCEL_BLOB_CALLBACK_URL=https://your-public-tunnel-url.example
-```
-
 ## Development
 
 ```bash
@@ -69,3 +59,11 @@ npm test
 3. Deploy as a standard Next.js project.
 
 All server routes use the Node.js runtime and rebuild a temporary workspace per request from the uploaded Blob session.
+
+## Upload behavior
+
+Uploads now use a server route that writes files to Vercel Blob directly with `put()`, which avoids the client-token exchange entirely.
+
+Tradeoff:
+
+- Each uploaded file must stay under the Vercel Functions request size limit, so very large individual assets may need a different upload strategy.

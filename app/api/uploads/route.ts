@@ -1,4 +1,4 @@
-import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
+import { put } from "@vercel/blob";
 
 import { errorJson, okJson } from "@/lib/server/http";
 
@@ -18,30 +18,25 @@ export async function POST(request: Request) {
       );
     }
 
-    const body = (await request.json()) as HandleUploadBody;
-    const response = await handleUpload({
-      body,
-      request,
-      onBeforeGenerateToken: async (pathname) => {
-        if (!isAllowedPathname(pathname)) {
-          throw new Error("Invalid upload target.");
-        }
+    const { searchParams } = new URL(request.url);
+    const pathname = searchParams.get("pathname");
+    if (!pathname || !isAllowedPathname(pathname)) {
+      return errorJson("Invalid upload pathname.");
+    }
 
-        return {
-          addRandomSuffix: false,
-          tokenPayload: JSON.stringify({
-            pathname,
-          }),
-        };
-      },
-      onUploadCompleted: async () => {
-        return;
-      },
+    if (!request.body) {
+      return errorJson("Missing upload body.");
+    }
+
+    const blob = await put(pathname, request.body, {
+      access: "public",
+      addRandomSuffix: false,
+      contentType: request.headers.get("content-type") ?? undefined,
     });
 
-    return okJson(response);
+    return okJson(blob);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to create upload token.";
+    const message = error instanceof Error ? error.message : "Unable to upload file.";
     return errorJson(message, 400);
   }
 }

@@ -2,7 +2,6 @@
 
 import type { InputHTMLAttributes, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { upload } from "@vercel/blob/client";
 
 import type {
   AddonEntry,
@@ -29,6 +28,7 @@ interface DownloadItem {
 }
 
 const PREFERENCES_KEY = "addon-compiler-web-preferences";
+const MAX_SERVER_UPLOAD_BYTES = 4 * 1024 * 1024;
 
 const directoryInputProps = {
   directory: "",
@@ -85,6 +85,23 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
     throw new Error(payload.error || "Request failed.");
   }
   return payload;
+}
+
+async function uploadFileToServer(pathname: string, file: File) {
+  const response = await fetch(`/api/uploads?pathname=${encodeURIComponent(pathname)}`, {
+    method: "POST",
+    body: file,
+    headers: file.type
+      ? {
+          "Content-Type": file.type,
+        }
+      : undefined,
+  });
+
+  const payload = (await response.json()) as { error?: string };
+  if (!response.ok) {
+    throw new Error(payload.error || "Upload failed.");
+  }
 }
 
 function isUpdateableScriptVersion(scriptState: string | undefined): boolean {
@@ -243,16 +260,23 @@ export function AddonCompilerApp() {
       return;
     }
 
+    const oversizedFile = pendingUploads.find((pending) => pending.file.size > MAX_SERVER_UPLOAD_BYTES);
+    if (oversizedFile) {
+      setStatus(
+        `Server uploads on Vercel are limited per file. ${oversizedFile.uploadPath} is too large (${formatBytes(
+          oversizedFile.file.size,
+        )}).`,
+      );
+      return;
+    }
+
     setBusy(true);
     setStatus(`Uploading ${pendingUploads.length} file(s) to session ${sessionId}...`);
 
     try {
       let completed = 0;
       for (const pending of pendingUploads) {
-        await upload(`sessions/${sessionId}/raw/${pending.uploadPath}`, pending.file, {
-          access: "public",
-          handleUploadUrl: "/api/uploads",
-        });
+        await uploadFileToServer(`sessions/${sessionId}/raw/${pending.uploadPath}`, pending.file);
         completed += 1;
         setStatus(`Uploaded ${completed}/${pendingUploads.length} file(s)...`);
       }
