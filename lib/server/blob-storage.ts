@@ -55,7 +55,7 @@ export function isBlobConfigured() {
   return hasBlobToken();
 }
 
-async function toBuffer(content: BodyInit | ReadableStream<Uint8Array> | Buffer): Promise<Buffer> {
+async function toBuffer(content: ReadableStream<Uint8Array> | Buffer): Promise<Buffer> {
   if (content instanceof Buffer) {
     return content;
   }
@@ -66,7 +66,7 @@ async function toBuffer(content: BodyInit | ReadableStream<Uint8Array> | Buffer)
 
 export async function storeUpload(
   pathnameValue: string,
-  content: BodyInit | ReadableStream<Uint8Array> | Buffer,
+  content: ReadableStream<Uint8Array> | Buffer,
   contentType?: string,
 ) {
   const buffer = await toBuffer(content);
