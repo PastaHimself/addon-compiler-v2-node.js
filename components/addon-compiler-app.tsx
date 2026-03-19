@@ -411,7 +411,7 @@ export function AddonCompilerApp() {
   async function runCompile(
     targetType: CompileRequest["targetType"],
     targetId: string,
-    targetLabel = targetType,
+    targetLabel: string = targetType,
   ) {
     setBusy(true);
     setStatus(`Compiling ${targetLabel}...`);
