@@ -1,0 +1,266 @@
+import { promises as fs } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+import JSZip from "jszip";
+
+import { buildArtifactForTarget } from "@/lib/compiler/archive";
+import { buildWorkspaceCatalog } from "@/lib/compiler/catalog";
+import { cleanName } from "@/lib/compiler/utils";
+import {
+  normalizeAddonAndBuildArtifact,
+  updateScriptVersionAndBuildArtifact,
+} from "@/lib/compiler/transforms";
+
+async function makeTempDir() {
+  return fs.mkdtemp(path.join(os.tmpdir(), "addon-compiler-test-"));
+}
+
+async function writeJson(filePath: string, value: unknown) {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, JSON.stringify(value, null, 2));
+}
+
+async function writeText(filePath: string, value: string) {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, value);
+}
+
+async function createResourcePack(rootDir: string, folderName: string, uuid: string, displayName: string) {
+  const packDir = path.join(rootDir, folderName);
+  await writeJson(path.join(packDir, "manifest.json"), {
+    format_version: 2,
+    header: {
+      name: "pack.name",
+      uuid,
+      version: [1, 0, 0],
+    },
+    modules: [
+      {
+        type: "resources",
+        uuid: `${uuid}-module`,
+        version: [1, 0, 0],
+      },
+    ],
+  });
+  await writeText(path.join(packDir, "texts", "en_US.lang"), `pack.name=${displayName}\nitem.demo:glow_ore.name=Glow Ore\n`);
+  await fs.mkdir(path.join(packDir, "textures"), { recursive: true });
+  await fs.writeFile(path.join(packDir, "pack_icon.png"), "icon");
+  return packDir;
+}
+
+async function createBehaviorPack(
+  rootDir: string,
+  folderName: string,
+  uuid: string,
+  displayName: string,
+  dependencyUuid?: string,
+  scriptVersion = "1.8.0-beta",
+) {
+  const packDir = path.join(rootDir, folderName);
+  const dependencies = [
+    {
+      module_name: "@minecraft/server",
+      version: scriptVersion,
+    },
+  ];
+  if (dependencyUuid) {
+    dependencies.unshift({ uuid: dependencyUuid });
+  }
+
+  await writeJson(path.join(packDir, "manifest.json"), {
+    format_version: 2,
+    header: {
+      name: "pack.name",
+      uuid,
+      version: [1, 0, 0],
+    },
+    modules: [
+      {
+        type: "data",
+        uuid: `${uuid}-module`,
+        version: [1, 0, 0],
+      },
+    ],
+    dependencies,
+  });
+  await writeText(path.join(packDir, "texts", "en_US.lang"), `pack.name=${displayName}\n`);
+  await fs.mkdir(path.join(packDir, "items"), { recursive: true });
+  await fs.writeFile(path.join(packDir, "pack_icon.png"), "icon");
+  return packDir;
+}
+
+async function createWorld(rootDir: string, folderName: string, displayName: string, rpUuid: string, bpUuid: string) {
+  const worldDir = path.join(rootDir, folderName);
+  await writeText(path.join(worldDir, "levelname.txt"), `${displayName}\n`);
+  await writeJson(path.join(worldDir, "world_resource_packs.json"), [{ pack_id: rpUuid }]);
+  await writeJson(path.join(worldDir, "world_behavior_packs.json"), [{ pack_id: bpUuid }]);
+  await fs.writeFile(path.join(worldDir, "world_icon.jpeg"), "icon");
+  return worldDir;
+}
+
+describe("compiler port", () => {
+  test("cleanName strips known RP/BP suffixes", () => {
+    expect(cleanName("Dungeon-BP")).toBe("Dungeon");
+    expect(cleanName("Skylands Resource Pack")).toBe("Skylands Pack");
+  });
+
+  test("buildWorkspaceCatalog pairs packs into add-ons and resolves world dependencies", async () => {
+    const rawDir = await makeTempDir();
+    try {
+      const rpUuid = "11111111-1111-1111-1111-111111111111";
+      const bpUuid = "22222222-2222-2222-2222-222222222222";
+
+      await createResourcePack(rawDir, "Demo RP", rpUuid, "Demo Resource");
+      await createBehaviorPack(rawDir, "Demo BP", bpUuid, "Demo Behavior", rpUuid);
+      await createWorld(rawDir, "Demo World", "My Demo World", rpUuid, bpUuid);
+
+      const catalog = await buildWorkspaceCatalog("test-session", rawDir, []);
+
+      expect(catalog.addOns).toHaveLength(1);
+      expect(catalog.addOns[0].resourcePack.cleanName).toBe("Demo Resource");
+      expect(catalog.addOns[0].behaviorPack.cleanName).toBe("Demo Behavior");
+      expect(catalog.worlds).toHaveLength(1);
+      expect(catalog.worlds[0].requiredRP).toHaveLength(1);
+      expect(catalog.worlds[0].requiredBP).toHaveLength(1);
+      expect(catalog.warnings).toEqual([]);
+    } finally {
+      await fs.rm(rawDir, { recursive: true, force: true });
+    }
+  });
+
+  test("buildWorkspaceCatalog emits duplicate UUID warnings", async () => {
+    const rawDir = await makeTempDir();
+    try {
+      const duplicateUuid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+      await createResourcePack(rawDir, "Duplicate RP One", duplicateUuid, "Duplicate RP One");
+      await createResourcePack(rawDir, "Duplicate RP Two", duplicateUuid, "Duplicate RP Two");
+
+      const catalog = await buildWorkspaceCatalog("duplicate-session", rawDir, []);
+
+      expect(catalog.warnings.some((warning) => warning.type === "DUPLICATE_UUID")).toBe(true);
+      expect(catalog.resourcePacks).toHaveLength(1);
+    } finally {
+      await fs.rm(rawDir, { recursive: true, force: true });
+    }
+  });
+
+  test("buildWorkspaceCatalog detects archive-root packs without an enclosing folder", async () => {
+    const rawDir = await makeTempDir();
+    const extractedDir = await makeTempDir();
+    try {
+      await writeJson(path.join(extractedDir, "manifest.json"), {
+        format_version: 2,
+        header: {
+          name: "pack.name",
+          uuid: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+          version: [1, 0, 0],
+        },
+        modules: [
+          {
+            type: "resources",
+            uuid: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbc",
+            version: [1, 0, 0],
+          },
+        ],
+      });
+      await writeText(path.join(extractedDir, "texts", "en_US.lang"), "pack.name=Root Archive Pack\n");
+
+      const catalog = await buildWorkspaceCatalog("archive-root-session", rawDir, [
+        { absolutePath: extractedDir, archiveName: "root.mcpack" },
+      ]);
+
+      expect(catalog.resourcePacks).toHaveLength(1);
+      expect(catalog.resourcePacks[0].cleanName).toBe("Root Archive Pack");
+    } finally {
+      await fs.rm(rawDir, { recursive: true, force: true });
+      await fs.rm(extractedDir, { recursive: true, force: true });
+    }
+  });
+
+  test("buildArtifactForTarget returns correct export extensions", async () => {
+    const rawDir = await makeTempDir();
+    try {
+      const rpUuid = "31111111-1111-1111-1111-111111111111";
+      const bpUuid = "32222222-2222-2222-2222-222222222222";
+      const standaloneRpUuid = "33333333-3333-3333-3333-333333333333";
+      const standaloneBpUuid = "34444444-4444-4444-4444-444444444444";
+
+      await createResourcePack(rawDir, "Addon RP", rpUuid, "Addon Resource");
+      await createBehaviorPack(rawDir, "Addon BP", bpUuid, "Addon Behavior", rpUuid);
+      await createResourcePack(rawDir, "Standalone RP", standaloneRpUuid, "Standalone Resource");
+      await createBehaviorPack(rawDir, "Standalone BP", standaloneBpUuid, "Standalone Behavior", undefined, "null-script");
+      await createWorld(rawDir, "Artifact World", "Artifact World", rpUuid, bpUuid);
+
+      const catalog = await buildWorkspaceCatalog("artifact-session", rawDir, []);
+
+      const addOnArtifact = await buildArtifactForTarget(catalog, catalog.addOns[0], "mcaddon");
+      const resourceArtifact = await buildArtifactForTarget(catalog, catalog.resourcePacks[0], "mcaddon");
+      const behaviorArtifact = await buildArtifactForTarget(catalog, catalog.behaviorPacks[0], "mcaddon");
+      const worldArtifact = await buildArtifactForTarget(catalog, catalog.worlds[0], "mcaddon");
+
+      expect(addOnArtifact.filename.endsWith(".mcaddon")).toBe(true);
+      expect(resourceArtifact.filename.endsWith(".mcpack")).toBe(true);
+      expect(behaviorArtifact.filename.endsWith(".mcpack")).toBe(true);
+      expect(worldArtifact.filename.endsWith(".mcworld")).toBe(true);
+      expect(addOnArtifact.buffer.byteLength).toBeGreaterThan(0);
+    } finally {
+      await fs.rm(rawDir, { recursive: true, force: true });
+    }
+  });
+
+  test("updateScriptVersionAndBuildArtifact rewrites the Script API version", async () => {
+    const rawDir = await makeTempDir();
+    try {
+      const rpUuid = "41111111-1111-1111-1111-111111111111";
+      const bpUuid = "42222222-2222-2222-2222-222222222222";
+
+      await createResourcePack(rawDir, "Rewrite RP", rpUuid, "Rewrite Resource");
+      const behaviorDir = await createBehaviorPack(rawDir, "Rewrite BP", bpUuid, "Rewrite Behavior", rpUuid, "2.1.0-beta");
+      const catalog = await buildWorkspaceCatalog("rewrite-session", rawDir, []);
+
+      const artifact = await updateScriptVersionAndBuildArtifact(
+        catalog,
+        catalog.addOns[0],
+        "2.1.0-beta",
+        "beta",
+      );
+
+      const manifestContent = await fs.readFile(path.join(behaviorDir, "manifest.json"), "utf8");
+      expect(manifestContent.includes('"version": "beta"')).toBe(true);
+      expect(artifact.filename.endsWith(".mcaddon")).toBe(true);
+    } finally {
+      await fs.rm(rawDir, { recursive: true, force: true });
+    }
+  });
+
+  test("normalizeAddonAndBuildArtifact renames files based on en_US.lang keys", async () => {
+    const rawDir = await makeTempDir();
+    try {
+      const rpUuid = "51111111-1111-1111-1111-111111111111";
+      const bpUuid = "52222222-2222-2222-2222-222222222222";
+
+      await createResourcePack(rawDir, "Normalize RP", rpUuid, "Normalize Resource");
+      const behaviorDir = await createBehaviorPack(rawDir, "Normalize BP", bpUuid, "Normalize Behavior", rpUuid);
+      await writeJson(path.join(behaviorDir, "items", "glow_ore.json"), {
+        "minecraft:item": {
+          description: {
+            identifier: "demo:glow_ore",
+          },
+        },
+      });
+
+      const catalog = await buildWorkspaceCatalog("normalize-session", rawDir, []);
+      const result = await normalizeAddonAndBuildArtifact(catalog, catalog.addOns[0]);
+
+      expect(result.logLines.some((line) => line.includes("Glow Ore"))).toBe(true);
+      await expect(fs.access(path.join(behaviorDir, "items", "Glow Ore.json"))).resolves.toBeUndefined();
+      expect(result.filename.endsWith(".mcaddon")).toBe(true);
+
+      const archive = await JSZip.loadAsync(result.buffer);
+      expect(Object.keys(archive.files).some((name) => name.endsWith("Glow Ore.json"))).toBe(true);
+    } finally {
+      await fs.rm(rawDir, { recursive: true, force: true });
+    }
+  });
+});

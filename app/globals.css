@@ -1,0 +1,498 @@
+@font-face {
+  font-family: "Minecraft";
+  src: url("/fonts/Minecraft.otf") format("opentype");
+}
+
+@font-face {
+  font-family: "MinecraftTen";
+  src: url("/fonts/MinecraftTen.otf") format("opentype");
+}
+
+:root {
+  --bg: #111611;
+  --bg-soft: rgba(22, 29, 22, 0.86);
+  --panel: rgba(26, 34, 27, 0.94);
+  --panel-strong: rgba(33, 42, 34, 0.98);
+  --line: rgba(151, 201, 111, 0.22);
+  --text: #ecf5db;
+  --muted: #b7c8a9;
+  --accent: #8cca5a;
+  --accent-strong: #bae97c;
+  --danger: #ff8572;
+  --shadow: 0 18px 70px rgba(0, 0, 0, 0.34);
+}
+
+html[data-theme="redstone"] {
+  --bg: #1b1111;
+  --bg-soft: rgba(37, 17, 17, 0.88);
+  --panel: rgba(43, 21, 21, 0.95);
+  --panel-strong: rgba(57, 27, 27, 0.98);
+  --line: rgba(255, 120, 94, 0.22);
+  --text: #ffefea;
+  --muted: #e6bbb0;
+  --accent: #ff805d;
+  --accent-strong: #ffb097;
+  --danger: #ffc265;
+}
+
+html[data-theme="sandstone"] {
+  --bg: #1c1812;
+  --bg-soft: rgba(39, 34, 24, 0.88);
+  --panel: rgba(45, 39, 27, 0.95);
+  --panel-strong: rgba(57, 49, 34, 0.98);
+  --line: rgba(246, 206, 108, 0.2);
+  --text: #fff3cb;
+  --muted: #e7d9ab;
+  --accent: #f5c95b;
+  --accent-strong: #ffe29a;
+  --danger: #ff9876;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background:
+    radial-gradient(circle at top, rgba(140, 202, 90, 0.14), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 30%),
+    var(--bg);
+  color: var(--text);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "Minecraft", "Segoe UI", sans-serif;
+  color: var(--text);
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.04), transparent 30%),
+    var(--bg);
+  background-size: 48px 48px, 48px 48px, auto, auto;
+}
+
+a {
+  color: inherit;
+}
+
+button,
+select,
+input {
+  font: inherit;
+}
+
+.page-shell {
+  width: min(1400px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 28px 0 56px;
+}
+
+.hero {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  background:
+    linear-gradient(140deg, rgba(255, 255, 255, 0.06), transparent 40%),
+    linear-gradient(180deg, var(--bg-soft), rgba(10, 12, 10, 0.96));
+  box-shadow: var(--shadow);
+  padding: 32px;
+}
+
+.hero::after {
+  content: "";
+  position: absolute;
+  inset: auto -18% -48% auto;
+  width: 340px;
+  height: 340px;
+  border-radius: 40%;
+  background: radial-gradient(circle, rgba(140, 202, 90, 0.2), transparent 70%);
+  pointer-events: none;
+}
+
+.hero-title {
+  font-family: "MinecraftTen", "Minecraft", sans-serif;
+  font-size: clamp(2.25rem, 5vw, 4.5rem);
+  line-height: 0.95;
+  margin: 0;
+  max-width: 12ch;
+}
+
+.hero-copy {
+  max-width: 64ch;
+  color: var(--muted);
+  line-height: 1.7;
+  margin: 18px 0 0;
+}
+
+.hero-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(300px, 0.9fr);
+  gap: 28px;
+  align-items: start;
+}
+
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.stack {
+  display: grid;
+  gap: 24px;
+  margin-top: 24px;
+}
+
+.upload-panel,
+.prefs-panel,
+.downloads-panel,
+.logs-panel,
+.section-panel {
+  padding: 24px;
+}
+
+.small-label {
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.78rem;
+  color: var(--accent-strong);
+  margin-bottom: 10px;
+}
+
+.subtle-text {
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.controls-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+}
+
+.field-label {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.select,
+.action-button,
+.file-button {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+}
+
+.select {
+  height: 48px;
+  padding: 0 14px;
+}
+
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.action-button,
+.file-button {
+  cursor: pointer;
+  padding: 13px 18px;
+  transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.action-button:hover,
+.file-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.32);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.action-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+  transform: none;
+}
+
+.action-button.primary {
+  background: linear-gradient(180deg, rgba(140, 202, 90, 0.28), rgba(140, 202, 90, 0.12));
+  border-color: rgba(140, 202, 90, 0.38);
+}
+
+.action-button.secondary {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.action-button.danger {
+  border-color: rgba(255, 133, 114, 0.4);
+  color: var(--danger);
+}
+
+.hidden-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.status-banner {
+  margin-top: 18px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.stat-card {
+  padding: 16px;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.stat-label {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.stat-value {
+  margin-top: 10px;
+  font-size: clamp(1.6rem, 3vw, 2.5rem);
+  font-family: "MinecraftTen", "Minecraft", sans-serif;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.section-title {
+  margin: 0;
+  font-family: "MinecraftTen", "Minecraft", sans-serif;
+  font-size: clamp(1.45rem, 3vw, 2.3rem);
+}
+
+.card-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.entry-card {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 16px;
+}
+
+.entry-media {
+  width: 88px;
+  height: 88px;
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.03)),
+    rgba(0, 0, 0, 0.12);
+  border: 1px solid var(--line);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.entry-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  image-rendering: pixelated;
+}
+
+.entry-fallback {
+  font-family: "MinecraftTen", "Minecraft", sans-serif;
+  font-size: 1.55rem;
+  color: var(--accent-strong);
+}
+
+.entry-title {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.entry-meta {
+  color: var(--muted);
+  margin-top: 8px;
+  line-height: 1.6;
+}
+
+.badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.badge {
+  padding: 7px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 0.78rem;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.entry-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.warning-list,
+.download-list,
+.log-list,
+.file-list {
+  display: grid;
+  gap: 12px;
+}
+
+.warning-card,
+.download-card,
+.log-line,
+.file-chip {
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.warning-card,
+.download-card {
+  padding: 16px;
+}
+
+.warning-card {
+  border-color: rgba(255, 133, 114, 0.3);
+}
+
+.warning-type {
+  color: var(--danger);
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.download-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+}
+
+.download-link {
+  color: var(--accent-strong);
+  text-decoration: none;
+}
+
+.download-link:hover {
+  text-decoration: underline;
+}
+
+.log-list {
+  max-height: 340px;
+  overflow: auto;
+}
+
+.log-line {
+  padding: 12px 14px;
+  color: var(--muted);
+}
+
+.file-list {
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  margin-top: 18px;
+}
+
+.file-chip {
+  padding: 12px 14px;
+}
+
+.muted-empty {
+  color: var(--muted);
+  padding: 10px 0 2px;
+}
+
+@media (max-width: 1000px) {
+  .hero-grid,
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .controls-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .entry-card {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .entry-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+
+  .download-card {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 700px) {
+  .page-shell {
+    width: min(100vw - 20px, 100%);
+    padding-top: 12px;
+  }
+
+  .hero,
+  .upload-panel,
+  .prefs-panel,
+  .downloads-panel,
+  .logs-panel,
+  .section-panel {
+    padding: 18px;
+  }
+
+  .hero-title {
+    font-size: 2.2rem;
+  }
+
+  .entry-card {
+    grid-template-columns: 1fr;
+  }
+
+  .entry-media {
+    width: 64px;
+    height: 64px;
+  }
+}

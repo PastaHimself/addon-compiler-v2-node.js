@@ -1,34 +1,61 @@
-# Minecraft Addon Compiler #
-This repository contains a tool built with the Wails framework to compile Minecraft Addons for development purposes. This tool streamlines the process of compiling and testing Minecraft Addons, making development more efficient and enjoyable.
+# Add-On Compiler
 
-# Features #
-- Compile Minecraft Addons: Quickly compile Minecraft Addons (Resource pack, Behavior pack) from source code into different format.
+Node.js + Next.js rewrite of the original Wails/Go Minecraft Bedrock add-on compiler. This version is designed for Vercel and processes uploaded folders or packaged archives through server-side Node routes.
 
-- Script API updater: Provides a quick method to mass update Script API (Beta API).
+## Stack
 
-- Good UI: Who doesn't like a good UI?
+- Next.js App Router
+- TypeScript
+- Vercel Blob for uploads and compiled output artifacts
+- JSZip for archive ingest/export
+- Vitest for core compiler tests
 
-# Installation #
+## Features
 
-### You can [download the program here](https://github.com/BlockStateTeam/addon-compiler-v2/releases) ###
-### Or compile it yourself (Tutorial below):
+- Upload extracted folders or packaged files: `.zip`, `.mcpack`, `.mcaddon`, `.mcworld`
+- Hosted workflow is upload-based. The Vercel deployment does not scan local Bedrock folders directly.
+- Build a catalog of:
+  - Resource Packs
+  - Add-Ons
+  - Behavior Packs
+  - Worlds
+  - Pairing and duplicate warnings
+- Compile targets to:
+  - Resource Pack -> `.mcpack`
+  - Behavior Pack -> `.mcpack`
+  - Add-On -> `.mcaddon` or `.zip`
+  - World -> `.mcworld`
+- Update Script API dependencies to `beta`
+- Normalize add-ons using `texts/en_US.lang`
+- Store output artifacts in Vercel Blob and return download URLs
 
-# Developement #
-You will need: 
+## Environment
 
-1. Wails framework installed on your system. [Installation instructions can be found here](https://wails.io/docs/gettingstarted/installation)
+Set the following environment variable in Vercel and local development:
 
-2. Go 1.16 or later installed on your system.
+```bash
+BLOB_READ_WRITE_TOKEN=...
+```
 
-3. Node.js and npm for building the frontend.
+Use Node.js 20 or newer for local development.
 
-Clone this repository to your local machine:
+## Development
 
-```git clone https://github.com/BlockStateTeam/addon-compiler-v2.git```
+```bash
+npm install
+npm run dev
+```
 
-Build and run the application with Wails:
+## Test
 
-```wails dev```
+```bash
+npm test
+```
 
-# License #
-This project is licensed under the MIT License. See the LICENSE file for details.
+## Deploy to Vercel
+
+1. Create a Vercel Blob store and connect it to the project.
+2. Set `BLOB_READ_WRITE_TOKEN`.
+3. Deploy as a standard Next.js project.
+
+All server routes use the Node.js runtime and rebuild a temporary workspace per request from the uploaded Blob session.

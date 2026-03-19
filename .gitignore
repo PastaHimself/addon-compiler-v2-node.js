@@ -1,4 +1,15 @@
 *.code-workspace
 .env
+.env.local
+.env.*.local
 node_modules
+.next
+out
+coverage
+playwright-report
+test-results
 build
+.vercel
+dist
+tmp
+*.tsbuildinfo
